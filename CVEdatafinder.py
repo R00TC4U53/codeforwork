@@ -1,5 +1,8 @@
 import requests
 import json
+from bs4 import BeautifulSoup
+
+
 
 def get_cve_details(cve_id):
     url = f"https://services.nvd.nist.gov/rest/json/cve/1.0/{cve_id}"
@@ -9,6 +12,19 @@ def get_cve_details(cve_id):
         return response.json()
     else:
         return None
+
+def find_keywords_on_page(url, keywords):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'lxml')
+    page_text = soup.get_text()
+
+    found_keywords = []
+    for keyword in keywords:
+        if keyword.lower() in page_text.lower():
+            found_keywords.append(keyword)
+
+    return found_keywords
+
 
 def format_cve_details(cve_data):
     cve = cve_data['result']['CVE_Items'][0]
@@ -22,11 +38,13 @@ def format_cve_details(cve_data):
 
     confirm_remediations = []
     other_remediations = []
+    keywords = ['remediation', 'mitigation', 'workaround', 'Workarounds', 'Executive Summary']
     for ref in cve['cve']['references']['reference_data']:
+        found_keywords = find_keywords_on_page(ref['url'], keywords)
         if ref['refsource'] == 'CONFIRM':
-            confirm_remediations.append(ref['url'])
+            confirm_remediations.append((ref['url'], found_keywords))
         else:
-            other_remediations.append(ref['url'])
+            other_remediations.append((ref['url'], found_keywords))
 
     output = f"""CVE ID: {cve_id}
 Description: {description}
@@ -40,13 +58,13 @@ Recommended Remediations:
 
     if confirm_remediations:
         output += "CONFIRM Remediations:\n"
-        for i, url in enumerate(confirm_remediations, start=1):
-            output += f"{i}. {url}\n"
+        for i, (url, keywords) in enumerate(confirm_remediations, start=1):
+            output += f"{i}. {url} (Keywords: {', '.join(keywords) if keywords else 'None'})\n"
 
     if other_remediations:
         output += "Other Remediations:\n"
-        for i, url in enumerate(other_remediations, start=1):
-            output += f"{i}. {url}\n"
+        for i, (url, keywords) in enumerate(other_remediations, start=1):
+            output += f"{i}. {url} (Keywords: {', '.join(keywords) if keywords else 'None'})\n"
 
     return output.strip()
 
